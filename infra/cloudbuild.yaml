@@ -1,0 +1,23 @@
+# Build único das duas imagens. Chamado por 10-build.sh com services/ como contexto.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "auth/Dockerfile", "-t", "${_REGISTRO}/auth:${_TAG}", "."]
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-f", "backend/Dockerfile", "-t", "${_REGISTRO}/backend:${_TAG}", "."]
+  # mesma imagem (mesmo digest) nos registros das outras regiões: o cold start não paga
+  # o download entre regiões
+  - name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        for r in ${_REGISTROS_EXTRAS}; do
+          for s in auth backend; do
+            docker tag ${_REGISTRO}/$$s:${_TAG} $$r/$$s:${_TAG}
+            docker push $$r/$$s:${_TAG}
+          done
+        done
+images:
+  - "${_REGISTRO}/auth:${_TAG}"
+  - "${_REGISTRO}/backend:${_TAG}"

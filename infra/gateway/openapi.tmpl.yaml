@@ -1,0 +1,81 @@
+# Template OpenAPI 2.0 do API Gateway, igual nos três cenários.
+# 30-gateway.sh substitui ${CENARIO}, ${AUTH_URL} e ${BACKEND_URL}.
+#
+# O gateway chama o Cloud Run com o ID token da conta gw-invoker no
+# Authorization; o token Firebase do cliente segue em X-Forwarded-Authorization.
+# O JWT do Firebase não é validado aqui (sem securityDefinitions): a validação
+# fica nos serviços. /health não é exposto.
+# deadline: 60 s, igual ao timeout do Cloud Run (o padrão do gateway é 15 s).
+swagger: "2.0"
+info:
+  title: coldstart-${CENARIO}
+  version: "1.0.0"
+schemes: [https]
+produces: [application/json]
+paths:
+  /auth/login:
+    post:
+      operationId: authLogin
+      x-google-backend:
+        address: ${AUTH_URL}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 60.0
+      responses:
+        "200": {description: ok}
+  /auth/verify:
+    get:
+      operationId: authVerify
+      x-google-backend:
+        address: ${AUTH_URL}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 60.0
+      responses:
+        "200": {description: ok}
+  /posts:
+    get:
+      operationId: listaPosts
+      x-google-backend:
+        address: ${BACKEND_URL}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 60.0
+      responses:
+        "200": {description: ok}
+    post:
+      operationId: criaPost
+      x-google-backend:
+        address: ${BACKEND_URL}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 60.0
+      responses:
+        "201": {description: ok}
+  /posts/{id}:
+    get:
+      operationId: buscaPost
+      parameters:
+        - {name: id, in: path, required: true, type: string}
+      x-google-backend:
+        address: ${BACKEND_URL}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 60.0
+      responses:
+        "200": {description: ok}
+    put:
+      operationId: atualizaPost
+      parameters:
+        - {name: id, in: path, required: true, type: string}
+      x-google-backend:
+        address: ${BACKEND_URL}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 60.0
+      responses:
+        "200": {description: ok}
+    delete:
+      operationId: removePost
+      parameters:
+        - {name: id, in: path, required: true, type: string}
+      x-google-backend:
+        address: ${BACKEND_URL}
+        path_translation: APPEND_PATH_TO_ADDRESS
+        deadline: 60.0
+      responses:
+        "204": {description: ok}

@@ -1,0 +1,5 @@
+fastapi==0.115.6
+uvicorn==0.34.0
+firebase-admin==6.6.0
+google-cloud-firestore==2.19.0
+google-cloud-secret-manager==2.22.0
