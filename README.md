@@ -5,7 +5,7 @@ Este repositório traz o código para reproduzir o experimento de um TCC sobre o
 > **Pergunta:** sob tráfego intermitente, quando vale a pena pagar por uma instância mínima ociosa, ou pelo *Startup CPU Boost*, para cumprir o SLO?
 
 - **Artigo:** _referência a incluir_.
-- **Dados brutos:** _DOI a incluir_. São as saídas do k6 de cada bateria, em CSV comprimido.
+- **Dados:** os dados brutos completos não são publicados. `dados/amostra/` traz um trecho de duas baterias, suficiente para rodar a análise (veja `dados/amostra/LEIA-ME.md`).
 
 ## Cenários
 
@@ -82,6 +82,7 @@ A partir da idade e da latência, a análise identifica as requisições que **c
 | `infra/` | Scripts `gcloud` de preparação, *build*, *deploy*, gateways, VM do k6, *seed* e remoção |
 | `load/` | Roteiro do k6 e scripts de bateria (`run-bateria.sh`) e campanha (`run-campanha.sh`) |
 | `analysis/` | Carga dos CSVs, latência e SLO, inicialização, custo, gráficos e testes |
+| `dados/amostra/` | Trecho dos dados brutos de duas baterias, para testar a análise |
 
 ## Como reproduzir
 
@@ -129,11 +130,11 @@ infra/cenario-b.sh desliga && infra/90-teardown.sh
 
 ## Como refazer a análise
 
-A análise roda sobre os dados brutos, tanto do seu bucket quanto do pacote de dados publicado:
+A análise roda sobre os dados brutos do seu bucket (`gcloud storage rsync -r gs://BUCKET/baterias dados/`) ou sobre a amostra em `dados/amostra/`:
 
 ```bash
 A=analysis/.venv/bin/python
-$A analysis/carregar.py dados/*-b* -o results/latencia.parquet
+$A analysis/carregar.py dados/amostra/*-b* -o results/latencia.parquet
 $A analysis/latencia.py results/latencia.parquet -o results/tabelas --por-regiao
 $A analysis/startup.py --inicio 2026-11-01T00:00:00Z --fim 2026-11-02T18:00:00Z -o results/startup
 $A analysis/custo.py results/tabelas/sli.csv --faturamento PROJETO.DATASET.TABELA --inicio AAAA-MM-DD --fim AAAA-MM-DD
