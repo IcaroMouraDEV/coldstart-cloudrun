@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 
-TABELA = "tcc-joel.faturamento.gcp_billing_export_resource_v1_01F04E_DFC935_B1DCAF"
+TABELA = "PROJETO.DATASET.gcp_billing_export_resource_v1_XXXXXX"  # sua tabela de exportação do faturamento
 
 # pausa (min) -> (início, fim) em UTC, horas cheias, e parquets da etapa
 ETAPAS = {
