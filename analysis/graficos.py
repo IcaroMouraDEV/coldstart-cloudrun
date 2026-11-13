@@ -144,7 +144,8 @@ def violacoes_por_pausa(etapas: dict[str, pd.DataFrame], saida: Path) -> None:
     dados = pd.concat([violacoes(s, ["regiao", "cenario"]).assign(etapa=e) for e, s in etapas.items()])
     regioes = sorted(dados["regiao"].unique())
     rotulos = list(etapas)
-    fig, eixos = plt.subplots(1, len(regioes), figsize=(2.7 * len(regioes) + 0.6, 3.0),
+    largura_painel = max(2.7, 0.85 * len(rotulos) + 0.4)
+    fig, eixos = plt.subplots(1, len(regioes), figsize=(largura_painel * len(regioes) + 0.6, 3.0),
                               sharey=True, squeeze=False)
     largura, x = 0.26, np.arange(len(rotulos))
     deslocamento = {"a": -largura, "b": 0.0, "c": largura}
@@ -156,7 +157,7 @@ def violacoes_por_pausa(etapas: dict[str, pd.DataFrame], saida: Path) -> None:
             barras = ax.bar(x + deslocamento[c], g["pct"], width=largura - 0.03, color=CORES[c],
                             label=NOMES[c], zorder=2)
             ax.bar_label(barras, labels=[f"{v:.1f}".replace(".", ",") for v in g["pct"]],
-                         padding=2, fontsize=6.5, color=TINTA_2)
+                         padding=2, fontsize=6, color=TINTA_2)
         ax.axhline(100 - SLO, color=TINTA, linewidth=1, linestyle=(0, (3, 2)), zorder=3)
         ax.set(title=regiao, xticks=x, xticklabels=rotulos, ylim=(0, teto))
         ax.set_xlabel("Pausa entre ciclos (min)")
