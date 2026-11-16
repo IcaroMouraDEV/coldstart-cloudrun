@@ -23,8 +23,8 @@ TABELA = "PROJETO.DATASET.gcp_billing_export_resource_v1_XXXXXX"  # sua tabela d
 ETAPAS = {
     30: ("2026-11-02T19:00:00Z", "2026-11-05T06:00:00Z", ["results/latencia-b48.parquet"]),
     15: ("2026-11-05T13:00:00Z", "2026-11-07T03:00:00Z", ["results/latencia-b913.parquet"]),
-    60: ("2026-11-07T18:00:00Z", "2026-11-10T06:00:00Z",
-         ["results/latencia-b14p.parquet", "results/latencia-b15p.parquet", "results/latencia-b16p.parquet"]),
+    60: ("2026-11-07T18:00:00Z", "2026-11-11T23:00:00Z", ["results/latencia-b1418.parquet"]),
+    5: ("2026-11-12T14:00:00Z", "2026-11-13T13:00:00Z", ["results/latencia-b1923.parquet"]),
 }
 
 PRECO = {"cpu": 0.000024, "cpu_min": 0.0000025, "mem": 0.0000025, "mem_min": 0.0000025, "req": 0.40e-6}
@@ -72,7 +72,7 @@ def faturamento(inicio: str, fim: str) -> pd.DataFrame:
 def instancias_a(parquets: list[str]) -> pd.Series:
     df = pd.concat([pd.read_parquet(p, columns=["regiao", "cenario", "servico", "instancia"]) for p in parquets])
     df = df[(df["cenario"] == "a") & df["instancia"].notna()]
-    return df.groupby("regiao")["instancia"].nunique()
+    return df.groupby("regiao", observed=True)["instancia"].nunique()
 
 
 def main():
