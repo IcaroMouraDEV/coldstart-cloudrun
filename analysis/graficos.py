@@ -11,6 +11,8 @@ mapa `sli_mapa`.
 Comparação entre etapas (pausas), em barras de % de violações:
     python analysis/graficos.py --etapas "15=results/tabelas-b913" "30=results/tabelas-b48" \
         -o results/figuras-etapas
+Com `--custo resultados/etapas/custo_etapas.csv` (saída de custo_etapas.py), sai também
+`custo_vs_violacoes`: custo relativo ao A contra % fora do SLO, um painel por pausa.
 """
 
 import argparse
@@ -18,6 +20,7 @@ import json
 from pathlib import Path
 
 import matplotlib
+import matplotlib.ticker
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -200,6 +203,48 @@ def sli_mapa(sli: pd.DataFrame, saida: Path) -> None:
     salva(fig, saida, "sli_mapa")
 
 
+def custo_vs_violacoes(etapas: dict[str, pd.DataFrame], custo: pd.DataFrame, saida: Path) -> None:
+    """Um painel por pausa: custo do Cloud Run relativo ao A (x) contra % fora do SLO (y).
+
+    O ponto é a média das regiões; as barras vão do mínimo ao máximo entre regiões.
+    """
+    viol = pd.concat([violacoes(s, ["regiao", "cenario"]).assign(pausa=int(e)) for e, s in etapas.items()])
+    custo = custo.assign(rel=custo["custo"] / custo.groupby(["pausa_min", "regiao"])["custo"].transform(
+        lambda s: s[custo.loc[s.index, "cenario"] == "a"].iloc[0]))
+    d = viol.merge(custo[["pausa_min", "regiao", "cenario", "rel"]],
+                   left_on=["pausa", "regiao", "cenario"], right_on=["pausa_min", "regiao", "cenario"])
+    g = d.groupby(["pausa", "cenario"]).agg(x=("rel", "mean"), x0=("rel", "min"), x1=("rel", "max"),
+                                            y=("pct", "mean"), y0=("pct", "min"), y1=("pct", "max"))
+    pausas = sorted(g.index.get_level_values(0).unique())
+    fig, eixos = plt.subplots(1, len(pausas), figsize=(2.15 * len(pausas) + 0.4, 2.9),
+                              sharex=True, sharey=True, squeeze=False)
+    teto = g["y1"].max() * 1.15
+    for ax, pausa in zip(eixos[0], pausas):
+        for c in CORES:
+            r = g.loc[(pausa, c)]
+            ax.errorbar(r["x"], r["y"], xerr=[[r["x"] - r["x0"]], [r["x1"] - r["x"]]],
+                        yerr=[[r["y"] - r["y0"]], [r["y1"] - r["y"]]], fmt="o", markersize=10 if c == "a" else 6.5,
+                        color=CORES[c], ecolor=CORES[c], elinewidth=1.2, capsize=0,
+                        markeredgecolor="white", markeredgewidth=1.5, label=NOMES[c], zorder=3)
+            # A e C quase coincidem perto de 1×: A maior por baixo, C menor por cima (os dois
+            # ficam visíveis); rótulos A à esquerda, B e C à direita
+            dx, dy, ha, va = {"a": (-8, 0, "right", "center"), "b": (8, 0, "left", "center"),
+                              "c": (8, 0, "left", "center")}[c]
+            ax.annotate(c.upper(), (r["x"], r["y"]), xytext=(dx, dy), textcoords="offset points",
+                        ha=ha, va=va, fontsize=7.5, color=TINTA, fontweight="bold")
+        ax.axhline(100 - SLO, color=TINTA, linewidth=1, linestyle=(0, (3, 2)), zorder=1)
+        ax.set(title=f"Pausa de {pausa} min", ylim=(0, teto), xlim=(0.7, 3.6))
+        ax.set_xlabel("Custo relativo ao A (×)")
+        ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}".replace(".", ",")))
+    eixos[0][0].yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}".replace(".", ",")))
+    eixos[0][0].set_ylabel("Requisições fora do SLO (%)")
+    eixos[0][0].annotate(f"limite do SLO ({100 - SLO:.0f}%)", (3.55, 100 - SLO), xytext=(0, 3),
+                         textcoords="offset points", ha="right", fontsize=7, color=TINTA)
+    fig.legend(*eixos[0][0].get_legend_handles_labels(), loc="upper center", ncol=3,
+               bbox_to_anchor=(0.5, 1.08), fontsize=7.5)
+    salva(fig, saida, "custo_vs_violacoes")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--tabelas", type=Path, default=Path("results/tabelas"))
@@ -217,6 +262,8 @@ def main():
             rotulo, pasta = item.split("=", 1)
             etapas[rotulo] = pd.concat(pd.read_csv(Path(p) / "sli.csv") for p in pasta.split(","))
         violacoes_por_pausa(etapas, args.saida)
+        if args.custo.suffix == ".csv" and args.custo.exists():
+            custo_vs_violacoes(etapas, pd.read_csv(args.custo), args.saida)
         print(f"figuras em {args.saida}/")
         return
 
