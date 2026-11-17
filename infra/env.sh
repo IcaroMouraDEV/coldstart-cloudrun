@@ -41,7 +41,10 @@ export INFRA_DIR
 valida_cenario() {
   case "$1" in
     a|b|c) ;;
-    *) echo "cenário inválido: '$1' (use a, b ou c)" >&2; exit 1 ;;
+    # variantes do teste de diagnóstico da penalidade do B (resultados/penalidade-b.md):
+    # ad/bd/cd = A/B/C acessados direto, sem gateway; bt = B com --no-cpu-throttling (B')
+    ad|bd|bt|cd) ;;
+    *) echo "cenário inválido: '$1' (use a, b, c, ad, bd, bt ou cd)" >&2; exit 1 ;;
   esac
 }
 

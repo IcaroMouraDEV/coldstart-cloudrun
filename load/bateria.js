@@ -19,6 +19,13 @@ import exec from 'k6/execution';
 const CENARIO = __ENV.CENARIO;
 const BATERIA = __ENV.BATERIA;
 const BASE_URL = (__ENV.BASE_URL || '').replace(/\/$/, '');
+// Acesso direto ao Cloud Run, sem gateway (teste de diagnóstico da penalidade do B):
+// com AUTH_URL e BACKEND_URL, cada requisição vai à URL do serviço com o ID token da conta
+// de serviço da VM em Authorization, e o token do Firebase segue em X-Forwarded-Authorization,
+// como o gateway faria.
+const AUTH_URL = (__ENV.AUTH_URL || '').replace(/\/$/, '');
+const BACKEND_URL = (__ENV.BACKEND_URL || '').replace(/\/$/, '');
+const DIRETO = Boolean(AUTH_URL && BACKEND_URL);
 const FIREBASE_API_KEY = __ENV.FIREBASE_API_KEY;
 const SENHA_TESTE = __ENV.SENHA_TESTE;
 const REGIAO = __ENV.REGIAO || 'us-central1';
@@ -36,13 +43,17 @@ const PAUSA_MIN = Number(__ENV.PAUSA_MIN || 30);
 // (requisições presas por ~8 s) era lento e fazia o k6 descartar iterações.
 const VUS_PRE = Number(__ENV.VUS_PRE || 300);
 const VUS_MAX = Number(__ENV.VUS_MAX || 600);
-const NIVEIS = [
+const TODOS_NIVEIS = [
   { nome: 'baixo', taxa: 2 },
   { nome: 'medio', taxa: 8 },
   { nome: 'alto', taxa: 18 },
 ];
+// NIVEL=medio fixa um único nível em todos os ciclos (teste de diagnóstico)
+const NIVEIS = __ENV.NIVEL ? TODOS_NIVEIS.filter((n) => n.nome === __ENV.NIVEL) : TODOS_NIVEIS;
+if (!NIVEIS.length) throw new Error(`NIVEL inválido: ${__ENV.NIVEL}`);
 
-for (const [nome, valor] of Object.entries({ CENARIO, BATERIA, BASE_URL, FIREBASE_API_KEY, SENHA_TESTE })) {
+const obrigatorias = { CENARIO, BATERIA, FIREBASE_API_KEY, SENHA_TESTE, ...(DIRETO ? {} : { BASE_URL }) };
+for (const [nome, valor] of Object.entries(obrigatorias)) {
   if (!valor) throw new Error(`variável ${nome} não definida (-e ${nome}=...)`);
 }
 
@@ -125,6 +136,26 @@ function token() {
   return sessao.idToken;
 }
 
+// ---------- ID token do Cloud Run (só no acesso direto; fora da medição) ----------
+
+const URL_METADATA = 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity';
+const tokensRun = {}; // por VU: audiência -> { token, expiraEm }
+
+function tokenRun(audiencia) {
+  const t = tokensRun[audiencia];
+  if (t && Date.now() < t.expiraEm) return t.token;
+  const r = http.get(`${URL_METADATA}?audience=${audiencia}`,
+    { headers: { 'Metadata-Flavor': 'Google' }, responseType: 'text', tags: { servico: 'metadata' } });
+  if (r.status !== 200) throw new Error(`ID token do metadata falhou: ${r.status}`);
+  tokensRun[audiencia] = { token: r.body, expiraEm: Date.now() + 50 * 60 * 1000 }; // vale 1 h
+  return r.body;
+}
+
+function base(servico) {
+  if (!DIRETO) return BASE_URL;
+  return servico === 'auth' ? AUTH_URL : BACKEND_URL;
+}
+
 // ---------- mistura de requisições ----------
 
 const criados = []; // posts criados por este VU, alvos dos DELETE
@@ -137,9 +168,14 @@ function corpoPost() {
   return JSON.stringify({ titulo: `k6 ${CENARIO}-${BATERIA}`, conteudo: 'x'.repeat(200) });
 }
 
-function headers(autenticado) {
+function headers(autenticado, servico) {
   const h = { 'Content-Type': 'application/json' };
-  if (autenticado) h.Authorization = `Bearer ${token()}`;
+  if (DIRETO) {
+    h.Authorization = `Bearer ${tokenRun(base(servico))}`;
+    if (autenticado) h['X-Forwarded-Authorization'] = `Bearer ${token()}`;
+  } else if (autenticado) {
+    h.Authorization = `Bearer ${token()}`;
+  }
   return h;
 }
 
@@ -157,32 +193,35 @@ function sorteia() {
 }
 
 function envia(operacao) {
+  const A = base('auth');
+  const B = base('backend');
   switch (operacao) {
     case 'verify':
-      return ['auth', http.get(`${BASE_URL}/auth/verify`, { headers: headers(true), timeout: '61s' })];
+      return ['auth', http.get(`${A}/auth/verify`, { headers: headers(true, 'auth'), timeout: '61s' })];
     case 'login':
-      return ['auth', http.post(`${BASE_URL}/auth/login`,
+      return ['auth', http.post(`${A}/auth/login`,
         JSON.stringify({ email: emailDoVu(), senha: SENHA_TESTE }),
-        { headers: headers(false), timeout: '61s' })];
+        { headers: headers(false, 'auth'), timeout: '61s' })];
     case 'get':
-      return ['backend', http.get(`${BASE_URL}/posts/${seedAleatorio()}`, { timeout: '61s' })];
+      return ['backend', http.get(`${B}/posts/${seedAleatorio()}`, { headers: headers(false, 'backend'), timeout: '61s' })];
     case 'list':
-      return ['backend', http.get(`${BASE_URL}/posts`, { timeout: '61s' })];
+      return ['backend', http.get(`${B}/posts`, { headers: headers(false, 'backend'), timeout: '61s' })];
     case 'post':
-      return ['backend', http.post(`${BASE_URL}/posts`, corpoPost(),
-        { headers: headers(true), timeout: '61s', responseType: 'text' })];
+      return ['backend', http.post(`${B}/posts`, corpoPost(),
+        { headers: headers(true, 'backend'), timeout: '61s', responseType: 'text' })];
     case 'put':
-      return ['backend', http.put(`${BASE_URL}/posts/${seedAleatorio()}`, corpoPost(),
-        { headers: headers(true), timeout: '61s' })];
+      return ['backend', http.put(`${B}/posts/${seedAleatorio()}`, corpoPost(),
+        { headers: headers(true, 'backend'), timeout: '61s' })];
     case 'delete':
-      return ['backend', http.del(`${BASE_URL}/posts/${criados.pop()}`, null,
-        { headers: headers(true), timeout: '61s' })];
+      return ['backend', http.del(`${B}/posts/${criados.pop()}`, null,
+        { headers: headers(true, 'backend'), timeout: '61s' })];
   }
 }
 
 export function requisicao() {
   const operacao = sorteia();
   if (operacao !== 'get' && operacao !== 'list' && operacao !== 'login') token(); // renova antes de medir
+  if (DIRETO) tokenRun(base(operacao === 'verify' || operacao === 'login' ? 'auth' : 'backend'));
   const [servico, res] = envia(operacao);
 
   const cold = res.headers['X-Cold-Start'];
