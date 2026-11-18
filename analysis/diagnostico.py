@@ -9,6 +9,7 @@ Uso:
 """
 
 import argparse
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -18,6 +19,8 @@ CAMINHOS = {
     "a": "A via gateway", "ad": "A direto",
     "b": "B via gateway", "bd": "B direto", "bt": "B′ via gateway (CPU sempre alocada)",
     "c": "C via gateway", "cd": "C direto",
+    "aw": "A via gateway aquecido (404)", "bw": "B via gateway aquecido (404)",
+    "br": "B via gateway aquecido (requisição real)",
 }
 
 
@@ -38,6 +41,7 @@ def carrega(pastas: list[Path]) -> pd.DataFrame:
             t = d["extra_tags"].fillna("")
             m = d["metadata"].fillna("")
             partes.append(pd.DataFrame({
+                "regiao": re.match(r"\d{8}-([a-z]+-[a-z]+\d+)-", pasta.name).group(1),
                 "caminho": caminho,
                 "bateria": tag(t, "bateria").astype(int),
                 "ciclo": tag(t, "ciclo").astype(int),
@@ -53,22 +57,22 @@ def carrega(pastas: list[Path]) -> pd.DataFrame:
     df = pd.concat(partes, ignore_index=True)
     df = df[df["operacao"] != "login"].copy()
     df["viol"] = (df["latencia_ms"] > ALVO_MS) | (df["status"] >= 400) | (df["status"] == 0)
-    ini = df.groupby(["caminho", "bateria", "ciclo"])["instante"].transform("min")
+    ini = df.groupby(["regiao", "caminho", "bateria", "ciclo"])["instante"].transform("min")
     df["t"] = (df["instante"] - ini).dt.total_seconds()
     df = df.sort_values("instante")
-    df["ordem"] = df.groupby(["caminho", "bateria", "ciclo", "servico"]).cumcount()
+    df["ordem"] = df.groupby(["regiao", "caminho", "bateria", "ciclo", "servico"]).cumcount()
     return df
 
 
 def resumo(df: pd.DataFrame) -> pd.DataFrame:
     linhas = []
-    for caminho, g in df.groupby("caminho", sort=False):
+    for (regiao, caminho), g in df.groupby(["regiao", "caminho"], sort=False):
         ini = g[g["t"] < 60]
         resto = g[g["t"] >= 60]
         primeiras = g[g["ordem"] < 10]
         afetadas = g[g["idade_ms"] < 10_000]
         linhas.append({
-            "caminho": caminho, "descricao": CAMINHOS[caminho], "requisicoes": len(g),
+            "regiao": regiao, "caminho": caminho, "descricao": CAMINHOS[caminho], "requisicoes": len(g),
             "sli": 100 * (1 - g["viol"].mean()),
             "viol_1min_pct": 100 * ini["viol"].mean(),
             "viol_resto_pct": 100 * resto["viol"].mean(),
@@ -84,36 +88,73 @@ def resumo(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(linhas)
 
 
-def figura(r: pd.DataFrame, saida: Path) -> None:
-    """Barras pareadas: % de violações no 1º minuto do ciclo, via gateway e direto, por cenário."""
+def _estilo():
     import sys
     sys.path.insert(0, str(Path(__file__).parent))
-    import numpy as np
-    from graficos import CORES, TINTA, TINTA_2, plt, salva
+    import graficos
+    return graficos
 
-    v = r.set_index("caminho")["viol_1min_pct"]
-    grupos = [("A", "a", "ad"), ("B", "b", "bd"), ("B′\n(CPU sempre\nalocada)", "bt", None), ("C", "c", "cd")]
-    fig, ax = plt.subplots(figsize=(4.6, 2.8))
-    x = np.arange(len(grupos))
-    larg = 0.36
-    for i, (rotulo, gw, direto) in enumerate(grupos):
-        cor = CORES[gw[0]]
-        b1 = ax.bar(x[i] - (larg / 2 if direto else 0), v[gw], width=larg - 0.03, color=cor, zorder=2)
-        ax.bar_label(b1, labels=[f"{v[gw]:.1f}".replace(".", ",")], padding=2, fontsize=7, color=TINTA_2)
-        if direto:
-            b2 = ax.bar(x[i] + larg / 2, v[direto], width=larg - 0.03, color="white", edgecolor=cor,
-                        hatch="////", linewidth=1.2, zorder=2)
-            ax.bar_label(b2, labels=[f"{v[direto]:.1f}".replace(".", ",")], padding=2, fontsize=7, color=TINTA_2)
-    ax.set_xticks(x, [g[0] for g in grupos])
-    ax.set_ylabel("Violações no 1º minuto do ciclo (%)")
-    ax.yaxis.set_major_formatter(plt.matplotlib.ticker.FuncFormatter(lambda val, _: f"{val:g}".replace(".", ",")))
-    ax.grid(axis="x", visible=False)
-    ax.set_ylim(0, v.max() * 1.18)
+
+def _rotulo(v: float) -> str:
+    return f"{v:.1f}".replace(".", ",")
+
+
+def figura(r: pd.DataFrame, saida: Path, nome: str = "diagnostico_gateway") -> None:
+    """Barras pareadas (via gateway × direto) de % de violações no 1º minuto, um painel por região."""
+    import numpy as np
     from matplotlib.patches import Patch
-    ax.legend(handles=[Patch(facecolor=TINTA_2, label="via API Gateway"),
-                       Patch(facecolor="white", edgecolor=TINTA_2, hatch="////", label="direto no Cloud Run")],
-              loc="upper left", fontsize=7.5)
-    salva(fig, saida, "diagnostico_gateway")
+    g = _estilo()
+    regioes = sorted(r["regiao"].unique())
+    grupos = [("A", "a", "ad"), ("B", "b", "bd"), ("B′\n(CPU sempre\nalocada)", "bt", None), ("C", "c", "cd")]
+    fig, eixos = g.plt.subplots(1, len(regioes), figsize=(3.3 * len(regioes) + 0.5, 2.9), sharey=True, squeeze=False)
+    teto = r["viol_1min_pct"].max() * 1.18
+    larg = 0.36
+    for ax, regiao in zip(eixos[0], regioes):
+        v = r[r["regiao"] == regiao].set_index("caminho")["viol_1min_pct"]
+        x = np.arange(len(grupos))
+        for i, (_, gw, direto) in enumerate(grupos):
+            cor = g.CORES[gw[0]]
+            b1 = ax.bar(x[i] - (larg / 2 if direto else 0), v[gw], width=larg - 0.03, color=cor, zorder=2)
+            ax.bar_label(b1, labels=[_rotulo(v[gw])], padding=2, fontsize=6.5, color=g.TINTA_2)
+            if direto:
+                b2 = ax.bar(x[i] + larg / 2, v[direto], width=larg - 0.03, color="white", edgecolor=cor,
+                            hatch="////", linewidth=1.2, zorder=2)
+                ax.bar_label(b2, labels=[_rotulo(v[direto])], padding=2, fontsize=6.5, color=g.TINTA_2)
+        ax.set_xticks(x, [gr[0] for gr in grupos], fontsize=7.5)
+        ax.set(title=regiao, ylim=(0, teto))
+        ax.grid(axis="x", visible=False)
+    eixos[0][0].set_ylabel("Violações no 1º minuto do ciclo (%)")
+    eixos[0][0].yaxis.set_major_formatter(g.matplotlib.ticker.FuncFormatter(lambda val, _: f"{val:g}".replace(".", ",")))
+    fig.legend(handles=[Patch(facecolor=g.TINTA_2, label="via API Gateway"),
+                        Patch(facecolor="white", edgecolor=g.TINTA_2, hatch="////", label="direto no Cloud Run")],
+               loc="upper center", ncol=2, bbox_to_anchor=(0.5, 1.07), fontsize=7.5)
+    g.salva(fig, saida, nome)
+
+
+def figura_aquecimento(r: pd.DataFrame, saida: Path, nome: str = "aquecimento_gateway") -> None:
+    """Barras: % de violações no 1º minuto com o gateway frio e aquecido (404 ou requisição real)."""
+    import numpy as np
+    from matplotlib.patches import Patch
+    g = _estilo()
+    v = r.set_index("caminho")["viol_1min_pct"]
+    barras = [("a", "A", None), ("aw", "A", "404"), ("b", "B", None), ("bw", "B", "404"), ("br", "B", "real")]
+    fig, ax = g.plt.subplots(figsize=(4.4, 2.8))
+    x = np.array([0, 0.42, 1.25, 1.67, 2.09])
+    for xi, (c, cen, aq) in zip(x, barras):
+        cor = g.CORES[c[0]]
+        kw = dict(color=cor) if aq is None else dict(color="white", edgecolor=cor, hatch="////" if aq == "404" else "....", linewidth=1.2)
+        b = ax.bar(xi, v[c], width=0.38, zorder=2, **kw)
+        ax.bar_label(b, labels=[_rotulo(v[c])], padding=2, fontsize=7, color=g.TINTA_2)
+    ax.set_xticks(x, ["A", "A", "B", "B", "B"])
+    ax.set_ylabel("Violações no 1º minuto do ciclo (%)")
+    ax.yaxis.set_major_formatter(g.matplotlib.ticker.FuncFormatter(lambda val, _: f"{val:g}".replace(".", ",")))
+    ax.grid(axis="x", visible=False)
+    ax.set_ylim(0, v.max() * 1.2)
+    ax.legend(handles=[Patch(facecolor=g.TINTA_2, label="gateway sem aquecimento"),
+                       Patch(facecolor="white", edgecolor=g.TINTA_2, hatch="////", label="aquecido com 404 a cada 5 min"),
+                       Patch(facecolor="white", edgecolor=g.TINTA_2, hatch="....", label="aquecido com requisição real")],
+              loc="upper right", fontsize=7)
+    g.salva(fig, saida, nome)
 
 
 def main():
@@ -123,12 +164,16 @@ def main():
     args = parser.parse_args()
     args.saida.mkdir(parents=True, exist_ok=True)
     df = carrega(args.pastas)
-    df.to_parquet(args.saida.parent.parent / "results" / "diagnostico.parquet", index=False)
+    df.to_parquet(Path("results") / f"{args.saida.name}.parquet", index=False)
     r = resumo(df)
     r.to_csv(args.saida / "resumo_caminhos.csv", index=False)
-    por_ciclo = (df[df["t"] < 60].groupby(["caminho", "bateria", "ciclo"])["viol"].mean() * 100).rename("viol_1min_pct")
+    por_ciclo = (df[df["t"] < 60].groupby(["regiao", "caminho", "bateria", "ciclo"])["viol"].mean() * 100).rename("viol_1min_pct")
     por_ciclo.reset_index().to_csv(args.saida / "viol_1min_por_ciclo.csv", index=False)
-    figura(r, args.saida)
+    completas = [reg for reg, rr in r.groupby("regiao") if {"a", "ad", "b", "bd", "bt", "c", "cd"} <= set(rr["caminho"])]
+    if completas:
+        figura(r[r["regiao"].isin(completas)], args.saida)
+    if {"a", "aw", "b", "bw", "br"} <= set(r["caminho"]):
+        figura_aquecimento(r, args.saida)
     pd.set_option("display.width", 250)
     print(r.round(2).to_string(index=False))
 

@@ -42,9 +42,10 @@ valida_cenario() {
   case "$1" in
     a|b|c) ;;
     # variantes do teste de diagnóstico da penalidade do B (resultados/penalidade-b.md):
-    # ad/bd/cd = A/B/C acessados direto, sem gateway; bt = B com --no-cpu-throttling (B')
-    ad|bd|bt|cd) ;;
-    *) echo "cenário inválido: '$1' (use a, b, c, ad, bd, bt ou cd)" >&2; exit 1 ;;
+    # ad/bd/cd = A/B/C acessados direto, sem gateway; bt = B com --no-cpu-throttling (B');
+    # aw/bw = A/B com o gateway aquecido por 404; br = B com o gateway aquecido por requisição real
+    ad|bd|bt|cd|aw|bw|br) ;;
+    *) echo "cenário inválido: '$1' (use a, b, c, ad, bd, bt, cd, aw, bw ou br)" >&2; exit 1 ;;
   esac
 }
 

@@ -4,6 +4,7 @@
 #   a, b, c   via API Gateway (GATEWAY_A, GATEWAY_B, GATEWAY_C)
 #   bt        B' (CPU sempre alocada) via gateway (GATEWAY_BT)
 #   ad, bd, cd  direto no Cloud Run, sem gateway (AUTH_URL_AD, BACKEND_URL_AD, ...)
+#   aw, bw, br  via gateway mantido aquecido (GATEWAY_AW, ...; ver aquece-gateway.sh)
 # Uso: load/run-diagnostico.sh <n> [--smoke]
 # Padrão: 12 ciclos de 2 min a 8 req/s (nível médio) + 30 min parados (~6,4 h).
 # --smoke: 2 ciclos de 1 min + 3 min parados, para validar os caminhos.
@@ -23,13 +24,15 @@ if [[ "${2:-}" == "--smoke" ]]; then
   CICLOS=2; TRAFEGO_MIN=1; PAUSA_MIN=3; PREFIXO="smoke-d${BATERIA}"
 fi
 
-SAIDA="$(cd "$DIR/.." && pwd)/results/$(date +%Y%m%d)-${REGIAO}-diag-${PREFIXO}"
+# ROTULO (config.env) entra no nome da pasta: testes diferentes na mesma região não colidem no bucket
+SAIDA="$(cd "$DIR/.." && pwd)/results/$(date +%Y%m%d)-${REGIAO}-${ROTULO:-diag}-${PREFIXO}"
 mkdir -p "$SAIDA"
 vmstat -t -n 30 > "$SAIDA/vmstat.log" &
 VMSTAT=$!
 trap 'kill $VMSTAT 2>/dev/null || true' EXIT
 
-CAMINHOS=(a b c bt ad bd cd)
+# CAMINHOS no config.env escolhe os caminhos (padrão: os 7 do diagnóstico original)
+read -r -a CAMINHOS <<< "${CAMINHOS:-a b c bt ad bd cd}"
 declare -A PIDS
 for c in "${CAMINHOS[@]}"; do
   if [[ "$c" == ?d ]]; then
@@ -62,8 +65,8 @@ done
 kill $VMSTAT 2>/dev/null || true
 
 if [[ -n "${BUCKET:-}" ]]; then
-  if gcloud storage cp -r "$SAIDA" "gs://${BUCKET}/diagnostico/${REGIAO}/"; then
-    echo "$(date -Is) enviado para gs://${BUCKET}/diagnostico/${REGIAO}/$(basename "$SAIDA")/"
+  if gcloud storage cp -r "$SAIDA" "gs://${BUCKET}/diagnostico/${REGIAO}${ROTULO:+-$ROTULO}/"; then
+    echo "$(date -Is) enviado para gs://${BUCKET}/diagnostico/${REGIAO}${ROTULO:+-$ROTULO}/$(basename "$SAIDA")/"
   else
     echo "$(date -Is) !! falha no envio; cópia local em $SAIDA" >&2; FALHAS=$((FALHAS + 1))
   fi

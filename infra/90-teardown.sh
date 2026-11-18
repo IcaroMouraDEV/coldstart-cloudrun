@@ -20,16 +20,18 @@ for c in a b c; do
   done
 done
 # serviços e gateway do teste de diagnóstico, se existirem
-for c in ad bd bt cd; do
+for c in ad bd bt cd aw bw br; do
   for s in auth backend; do
     gcloud run services delete "${s}-${c}" --region="$REGIAO" --quiet 2>/dev/null || true
   done
 done
-gcloud api-gateway gateways delete "gw-bt${SUFIXO}" --location="$REGIAO" --quiet 2>/dev/null || true
-for cfg in $(gcloud api-gateway api-configs list --api="coldstart-bt${SUFIXO}" --format='value(name.basename())' 2>/dev/null); do
-  gcloud api-gateway api-configs delete "$cfg" --api="coldstart-bt${SUFIXO}" --quiet || true
+for c in bt aw bw br; do
+  gcloud api-gateway gateways delete "gw-${c}${SUFIXO}" --location="$REGIAO" --quiet 2>/dev/null || true
+  for cfg in $(gcloud api-gateway api-configs list --api="coldstart-${c}${SUFIXO}" --format='value(name.basename())' 2>/dev/null); do
+    gcloud api-gateway api-configs delete "$cfg" --api="coldstart-${c}${SUFIXO}" --quiet || true
+  done
+  gcloud api-gateway apis delete "coldstart-${c}${SUFIXO}" --quiet 2>/dev/null || true
 done
-gcloud api-gateway apis delete "coldstart-bt${SUFIXO}" --quiet 2>/dev/null || true
 
 gcloud compute instances delete "$VM_K6" --zone="$ZONA" --quiet || true
 # sem serviços não há mais logs a exportar; os já exportados ficam no bucket
