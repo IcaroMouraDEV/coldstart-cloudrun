@@ -21,6 +21,9 @@ CAMINHOS = {
     "c": "C via gateway", "cd": "C direto",
     "aw": "A via gateway aquecido (404)", "bw": "B via gateway aquecido (404)",
     "br": "B via gateway aquecido (requisição real)",
+    "b15": "B via gateway, 15 min parado", "b20": "B via gateway, 20 min parado",
+    "b25": "B via gateway, 25 min parado", "b30": "B via gateway, 30 min parado",
+    "bw10": "B via gateway aquecido (404 a cada 10 min)", "bw15": "B via gateway aquecido (404 a cada 15 min)",
 }
 
 
@@ -157,6 +160,28 @@ def figura_aquecimento(r: pd.DataFrame, saida: Path, nome: str = "aquecimento_ga
     g.salva(fig, saida, nome)
 
 
+def figura_limiar(r: pd.DataFrame, por_ciclo: pd.DataFrame, saida: Path, nome: str = "limiar_gateway") -> None:
+    """Violações no 1º minuto por tempo parado (b15..b30) e com aquecimento a cada 10 e 15 min."""
+    import numpy as np
+    g = _estilo()
+    v = r.set_index("caminho")["viol_1min_pct"]
+    barras = [("b15", "15"), ("b20", "20"), ("b25", "25"), ("b30", "30"), ("bw15", "30\n+404/15"), ("bw10", "30\n+404/10")]
+    fig, ax = g.plt.subplots(figsize=(4.6, 2.8))
+    x = np.array([0, 1, 2, 3, 4.3, 5.3])
+    for xi, (c, _) in zip(x, barras):
+        kw = dict(color=g.CORES["b"]) if not c.startswith("bw") else dict(color="white", edgecolor=g.CORES["b"], hatch="////", linewidth=1.2)
+        b = ax.bar(xi, v[c], width=0.6, zorder=2, **kw)
+        ax.bar_label(b, labels=[_rotulo(v[c])], padding=2, fontsize=7, color=g.TINTA_2)
+        pc = por_ciclo[por_ciclo["caminho"] == c]["viol_1min_pct"]
+        ax.scatter(np.full(len(pc), xi) + np.linspace(-0.18, 0.18, len(pc)), pc, s=6, color=g.TINTA_2, alpha=0.5, zorder=3, linewidths=0)
+    ax.set_xticks(x, [b[1] for b in barras], fontsize=7.5)
+    ax.set_xlabel("Minutos parados antes do ciclo (B via API Gateway)")
+    ax.set_ylabel("Violações no 1º minuto do ciclo (%)")
+    ax.yaxis.set_major_formatter(g.matplotlib.ticker.FuncFormatter(lambda val, _: f"{val:g}".replace(".", ",")))
+    ax.grid(axis="x", visible=False)
+    g.salva(fig, saida, nome)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("pastas", nargs="+", type=Path)
@@ -174,6 +199,8 @@ def main():
         figura(r[r["regiao"].isin(completas)], args.saida)
     if {"a", "aw", "b", "bw", "br"} <= set(r["caminho"]):
         figura_aquecimento(r, args.saida)
+    if {"b15", "b20", "b25", "b30", "bw10", "bw15"} <= set(r["caminho"]):
+        figura_limiar(r, por_ciclo.reset_index(), args.saida)
     pd.set_option("display.width", 250)
     print(r.round(2).to_string(index=False))
 

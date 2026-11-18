@@ -13,11 +13,12 @@ IMAGEM_BACKEND="${REGISTRO}/backend@${DIGEST_BACKEND}"
 
 # Variantes do teste de diagnóstico: ad/bd/cd são cópias de A/B/C acessadas direto (sem
 # gateway); bt é o B com CPU sempre alocada (B'); aw/bw/br são A/B atrás de um gateway mantido
-# aquecido (load/aquece-gateway.sh). Usam a coleção do cenário de origem.
+# aquecido (load/aquece-gateway.sh). b15..b30, bw10 e bw15 são cópias do B para o teste do
+# limiar do gateway. Usam a coleção do cenário de origem.
 THROTTLING=--cpu-throttling
 case "$CENARIO" in
   a|ad|aw) FLAGS_CENARIO=(--min-instances=0 --no-cpu-boost) ;;
-  b|bd|bw|br) FLAGS_CENARIO=(--min-instances=1 --no-cpu-boost) ;;
+  b|bd|bw|br|b15|b20|b25|b30|bw10|bw15) FLAGS_CENARIO=(--min-instances=1 --no-cpu-boost) ;;
   bt) FLAGS_CENARIO=(--min-instances=1 --no-cpu-boost); THROTTLING=--no-cpu-throttling ;;
   c|cd) FLAGS_CENARIO=(--min-instances=0 --cpu-boost) ;;
 esac

@@ -38,6 +38,8 @@ const POSTS_SEED = Number(__ENV.POSTS_SEED || 1000);
 const CICLOS = Number(__ENV.CICLOS || 18);
 const TRAFEGO_MIN = Number(__ENV.TRAFEGO_MIN || 10);
 const PAUSA_MIN = Number(__ENV.PAUSA_MIN || 30);
+// ATRASO_MIN adia o 1º ciclo (teste do limiar: o 1º ciclo também começa depois da pausa do caminho)
+const ATRASO_MIN = Number(__ENV.ATRASO_MIN || 0);
 
 // VUs pré-alocados em todos os níveis: criá-los sob demanda durante um cold start
 // (requisições presas por ~8 s) era lento e fazia o k6 descartar iterações.
@@ -68,7 +70,7 @@ function cenarios() {
       rate: nivel.taxa,
       timeUnit: '1s',
       duration: `${TRAFEGO_MIN}m`,
-      startTime: `${i * (TRAFEGO_MIN + PAUSA_MIN)}m`,
+      startTime: `${ATRASO_MIN + i * (TRAFEGO_MIN + PAUSA_MIN)}m`,
       preAllocatedVUs: VUS_PRE,
       maxVUs: VUS_MAX,
       gracefulStop: '65s', // deixa terminar requisições de até 60 s

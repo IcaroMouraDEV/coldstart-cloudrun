@@ -45,7 +45,10 @@ valida_cenario() {
     # ad/bd/cd = A/B/C acessados direto, sem gateway; bt = B com --no-cpu-throttling (B');
     # aw/bw = A/B com o gateway aquecido por 404; br = B com o gateway aquecido por requisição real
     ad|bd|bt|cd|aw|bw|br) ;;
-    *) echo "cenário inválido: '$1' (use a, b, c, ad, bd, bt, cd, aw, bw ou br)" >&2; exit 1 ;;
+    # teste do limiar (resultados/limiar-gateway.md): B com pausas de 15/20/25/30 min sem
+    # aquecimento (b15..b30) e B com o gateway aquecido por 404 a cada 10 e 15 min (bw10, bw15)
+    b15|b20|b25|b30|bw10|bw15) ;;
+    *) echo "cenário inválido: '$1' (use a, b, c, ad, bd, bt, cd, aw, bw, br, b15, b20, b25, b30, bw10 ou bw15)" >&2; exit 1 ;;
   esac
 }
 

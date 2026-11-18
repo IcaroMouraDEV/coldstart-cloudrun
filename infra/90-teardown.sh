@@ -20,12 +20,12 @@ for c in a b c; do
   done
 done
 # serviços e gateway do teste de diagnóstico, se existirem
-for c in ad bd bt cd aw bw br; do
+for c in ad bd bt cd aw bw br b15 b20 b25 b30 bw10 bw15; do
   for s in auth backend; do
     gcloud run services delete "${s}-${c}" --region="$REGIAO" --quiet 2>/dev/null || true
   done
 done
-for c in bt aw bw br; do
+for c in bt aw bw br b15 b20 b25 b30 bw10 bw15; do
   gcloud api-gateway gateways delete "gw-${c}${SUFIXO}" --location="$REGIAO" --quiet 2>/dev/null || true
   for cfg in $(gcloud api-gateway api-configs list --api="coldstart-${c}${SUFIXO}" --format='value(name.basename())' 2>/dev/null); do
     gcloud api-gateway api-configs delete "$cfg" --api="coldstart-${c}${SUFIXO}" --quiet || true
