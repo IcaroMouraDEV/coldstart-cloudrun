@@ -161,24 +161,34 @@ def figura_aquecimento(r: pd.DataFrame, saida: Path, nome: str = "aquecimento_ga
 
 
 def figura_limiar(r: pd.DataFrame, por_ciclo: pd.DataFrame, saida: Path, nome: str = "limiar_gateway") -> None:
-    """Violações no 1º minuto por tempo parado (b15..b30) e com aquecimento a cada 10 e 15 min."""
+    """Violações no 1º minuto por tempo parado (b15..b30) e com aquecimento a cada 15 e 10 min, um painel por região.
+    Barra = média dos 24 ciclos; pontos = cada ciclo."""
     import numpy as np
+    from matplotlib.patches import Patch
     g = _estilo()
-    v = r.set_index("caminho")["viol_1min_pct"]
-    barras = [("b15", "15"), ("b20", "20"), ("b25", "25"), ("b30", "30"), ("bw15", "30\n+404/15"), ("bw10", "30\n+404/10")]
-    fig, ax = g.plt.subplots(figsize=(4.6, 2.8))
+    regioes = sorted(r["regiao"].unique())
+    barras = [("b15", "15"), ("b20", "20"), ("b25", "25"), ("b30", "30"), ("bw15", "30\n404/15"), ("bw10", "30\n404/10")]
     x = np.array([0, 1, 2, 3, 4.3, 5.3])
-    for xi, (c, _) in zip(x, barras):
-        kw = dict(color=g.CORES["b"]) if not c.startswith("bw") else dict(color="white", edgecolor=g.CORES["b"], hatch="////", linewidth=1.2)
-        b = ax.bar(xi, v[c], width=0.6, zorder=2, **kw)
-        ax.bar_label(b, labels=[_rotulo(v[c])], padding=2, fontsize=7, color=g.TINTA_2)
-        pc = por_ciclo[por_ciclo["caminho"] == c]["viol_1min_pct"]
-        ax.scatter(np.full(len(pc), xi) + np.linspace(-0.18, 0.18, len(pc)), pc, s=6, color=g.TINTA_2, alpha=0.5, zorder=3, linewidths=0)
-    ax.set_xticks(x, [b[1] for b in barras], fontsize=7.5)
-    ax.set_xlabel("Minutos parados antes do ciclo (B via API Gateway)")
-    ax.set_ylabel("Violações no 1º minuto do ciclo (%)")
-    ax.yaxis.set_major_formatter(g.matplotlib.ticker.FuncFormatter(lambda val, _: f"{val:g}".replace(".", ",")))
-    ax.grid(axis="x", visible=False)
+    fig, eixos = g.plt.subplots(1, len(regioes), figsize=(3.4 * len(regioes) + 0.5, 3.0), sharey=True, squeeze=False)
+    for ax, regiao in zip(eixos[0], regioes):
+        v = r[r["regiao"] == regiao].set_index("caminho")["viol_1min_pct"]
+        pcr = por_ciclo[por_ciclo["regiao"] == regiao]
+        for xi, (c, _) in zip(x, barras):
+            kw = dict(color=g.CORES["b"]) if not c.startswith("bw") else dict(color="white", edgecolor=g.CORES["b"], hatch="////", linewidth=1.2)
+            b = ax.bar(xi, v[c], width=0.6, zorder=2, **kw)
+            ax.bar_label(b, labels=[_rotulo(v[c])], padding=2, fontsize=6.5, color=g.TINTA_2)
+            pc = pcr[pcr["caminho"] == c]["viol_1min_pct"]
+            ax.scatter(np.full(len(pc), xi) + np.linspace(-0.2, 0.2, len(pc)), pc, s=5, color=g.TINTA_2, alpha=0.45, zorder=3, linewidths=0)
+        ax.set_xticks(x, [b[1] for b in barras], fontsize=7)
+        ax.set_title(regiao)
+        ax.grid(axis="x", visible=False)
+    eixos[0][len(regioes) // 2].set_xlabel("Minutos parados antes do ciclo (B via API Gateway)")
+    eixos[0][0].set_ylabel("Violações no 1º minuto do ciclo (%)")
+    eixos[0][0].yaxis.set_major_formatter(g.matplotlib.ticker.FuncFormatter(lambda val, _: f"{val:g}".replace(".", ",")))
+    fig.legend(handles=[Patch(facecolor=g.CORES["b"], label="sem aquecimento"),
+                        Patch(facecolor="white", edgecolor=g.CORES["b"], hatch="////", label="404 a cada 15 ou 10 min"),
+                        g.plt.Line2D([], [], marker="o", ls="", color=g.TINTA_2, alpha=0.6, markersize=3, label="um ciclo")],
+               loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.07), fontsize=7.5)
     g.salva(fig, saida, nome)
 
 
